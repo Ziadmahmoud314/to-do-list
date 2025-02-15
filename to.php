@@ -1,38 +1,36 @@
 <?php
+$servername = "localhost";
+$username = "root";
+$password = "";
+$dbname = "todo_db";
 
-$file = 'tasks.json';
-
-if (file_exists($file)) {
-  $tasks = json_decode(file_get_contents($file), true);
-  if (!is_array($tasks)) {
-    $tasks = [];
-  }
-} else {
-  $tasks = [];
+$conn = new mysqli($servername, $username, $password, $dbname);
+if ($conn->connect_error) {
+  die("Connection failed: " . $conn->connect_error);
 }
 
-$edit_task = ""; 
-$edit_id = "";   
+$sql = "CREATE TABLE IF NOT EXISTS tasks (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    task VARCHAR(255) NOT NULL
+)";
+$conn->query($sql);
+
+$edit_task = "";
+$edit_id = "";
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
   if (isset($_POST['contant'])) {
     $task_desc = trim($_POST['contant']);
     if (!empty($task_desc)) {
       if (!empty($_POST['edit_id'])) {
-        foreach ($tasks as &$task) {
-          if ($task['id'] == $_POST['edit_id']) {
-            $task['task'] = $task_desc;
-            break;
-          }
-        }
+        $stmt = $conn->prepare("UPDATE tasks SET task=? WHERE id=?");
+        $stmt->bind_param("si", $task_desc, $_POST['edit_id']);
       } else {
-        $new_task = [
-          'id' => uniqid(),
-          'task' => $task_desc ];
-        array_unshift($tasks, $new_task);
+        $stmt = $conn->prepare("INSERT INTO tasks (task) VALUES (?)");
+        $stmt->bind_param("s", $task_desc);
       }
-
-      file_put_contents($file, json_encode($tasks, JSON_PRETTY_PRINT));
+      $stmt->execute();
+      $stmt->close();
       header("Location: to.php");
       exit;
     }
@@ -40,28 +38,26 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
   if (isset($_POST['Delete'])) {
     $delete_id = $_POST['Delete'];
-    foreach ($tasks as $key => $task) {
-      if ($task['id'] == $delete_id) {
-        unset($tasks[$key]);
-        break;
-      }
-    }
-    $tasks = array_values($tasks); 
-    file_put_contents($file, json_encode($tasks, JSON_PRETTY_PRINT));
+    $stmt = $conn->prepare("DELETE FROM tasks WHERE id=?");
+    $stmt->bind_param("i", $delete_id);
+    $stmt->execute();
+    $stmt->close();
     header("Location: to.php");
     exit;
   }
 
   if (isset($_POST['Edit'])) {
     $edit_id = $_POST['Edit'];
-    foreach ($tasks as $task) {
-      if ($task['id'] == $edit_id) {
-        $edit_task = $task['task'];
-        break;
-      }
-    }
+    $stmt = $conn->prepare("SELECT task FROM tasks WHERE id=?");
+    $stmt->bind_param("i", $edit_id);
+    $stmt->execute();
+    $stmt->bind_result($edit_task);
+    $stmt->fetch();
+    $stmt->close();
   }
 }
+
+$tasks = $conn->query("SELECT * FROM tasks");
 ?>
 
 <!DOCTYPE html>
@@ -70,7 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>To-Do List</title>
+   <title>To-Do List</title>
   <style>
 body {
   background-color: #f7ede2;
@@ -193,23 +189,21 @@ button[name="Edit"]:hover {
         <input type="submit" value="Add Task" id="complete" />
       </form>
     </div>
-
     <div class="tasks">
-      <?php if ($tasks): ?>
-        <?php foreach ($tasks as $task): ?>
-          <div class="task">
-            <div class="article"><?= $task['task']; ?></div>
-            <div class="button">
-              <form method="POST" action="">
-                <button type="submit" name="Delete" value="<?= $task['id'] ?>">Delete</button>
-                <button type="submit" name="Edit" value="<?= $task['id'] ?>">Edit</button>
-              </form>
-            </div>
+      <?php while ($task = $tasks->fetch_assoc()): ?>
+        <div class="task">
+          <div class="article"><?= $task['task']; ?></div>
+          <div class="button">
+            <form method="POST" action="">
+              <button type="submit" name="Delete" value="<?= $task['id'] ?>">Delete</button>
+              <button type="submit" name="Edit" value="<?= $task['id'] ?>">Edit</button>
+            </form>
           </div>
-        <?php endforeach; ?>
-      <?php endif; ?>
+        </div>
+      <?php endwhile; ?>
     </div>
   </main>
 </body>
 
 </html>
+<?php $conn->close(); ?>
